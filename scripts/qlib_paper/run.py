@@ -61,8 +61,7 @@ def render(state, phase, expected, status, news=''):
         lines[-1:-1] = ['', '本周模拟账本变动：'] + ([
             f"{e['day']} {e['side']} {e['code']} {e['shares']}股 @ {e['price']:.3f}元"
             for e in events] or ['本周没有模拟成交。'])
-    return '
-'.join(lines)
+    return '\n'.join(lines)
 
 
 def daily(phase, output, provider=None):
