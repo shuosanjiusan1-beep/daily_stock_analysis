@@ -25,6 +25,7 @@ def context(day):
                         {'Authorization': 'Bearer ' + key})
         items = [{'title': r.get('title'), 'url': r.get('url'), 'content': str(r.get('content', ''))[:800]}
                  for r in response.get('results', [])]
+        print('Tavily search succeeded')
         links = '\n'.join(f"- {r['title']}：{r['url']}" for r in items)
         if not gemini or not model:
             return '新闻来源（未做模型解读）：\n' + links
@@ -36,8 +37,12 @@ def context(day):
                       {'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'maxOutputTokens': 700}},
                       {'x-goog-api-key': gemini})
         summary = ''.join(p.get('text', '') for p in result['candidates'][0]['content']['parts'])
+        if not summary.strip():
+            raise ValueError('Empty Gemini summary')
+        print('Gemini summary succeeded')
         return 'AI新闻摘要（不参与模拟交易）：\n' + summary + '\n' + links
-    except Exception:
+    except Exception as exc:
+        print(f'Optional news context unavailable ({type(exc).__name__})')
         return '新闻或AI摘要暂不可用；未影响确定性模拟账本。'
 
 
