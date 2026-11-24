@@ -1,0 +1,99 @@
+name: Qlib A股独立模拟辅助
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'validate=数据与官方回测; commission=首次验收并初始化; 其余为邮件时段'
+        type: choice
+        default: validate
+        options: [validate, commission, test-mail, pre, intra, post]
+  schedule:
+    # Asia/Shanghai: 08:20, 11:10, 19:30. GitHub scheduled runs can be delayed.
+    - cron: '20 0 * * 1-5'
+    - cron: '10 3 * * 1-5'
+    - cron: '30 11 * * 1-5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qlib-paper-ledger
+  cancel-in-progress: false
+
+jobs:
+  paper:
+    if: github.event_name == 'workflow_dispatch' || vars.QLIB_PAPER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scripts/qlib_paper/requirements.txt
+      - name: Install isolated dependencies
+        run: pip install -r scripts/qlib_paper/requirements.txt
+      - name: Verify paper safeguards
+        run: python -m unittest discover -s tests -p test_qlib_paper.py -v
+      - name: Select phase
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ -n "$INPUT_MODE" ]; then
+            echo "MODE=$INPUT_MODE" >> "$GITHUB_ENV"
+          elif [ "$SCHEDULE" = '20 0 * * 1-5' ]; then
+            echo 'MODE=pre' >> "$GITHUB_ENV"
+          elif [ "$SCHEDULE" = '10 3 * * 1-5' ]; then
+            echo 'MODE=intra' >> "$GITHUB_ENV"
+          else
+            echo 'MODE=post' >> "$GITHUB_ENV"
+          fi
+      - name: Verify data and official LightGBM baseline
+        if: env.MODE == 'validate' || env.MODE == 'commission'
+        run: python scripts/qlib_paper/run.py validate
+      - name: Test configured Gmail and news services
+        if: env.MODE == 'commission' || env.MODE == 'test-mail'
+        env:
+          EMAIL_SENDER: ${{ vars.EMAIL_SENDER || secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS || secrets.EMAIL_RECEIVERS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL }}
+          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+        run: python scripts/qlib_paper/run.py test-mail
+      - name: Initialize isolated paper ledger after validation
+        if: env.MODE == 'commission'
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/qlib_paper/run.py initialize
+      - name: Produce paper report
+        if: env.MODE == 'pre' || env.MODE == 'intra' || env.MODE == 'post'
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          EMAIL_SENDER: ${{ vars.EMAIL_SENDER || secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS || secrets.EMAIL_RECEIVERS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL }}
+          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+        run: python scripts/qlib_paper/run.py "$MODE"
+      - name: Preserve reports (no secrets or environment dumps)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: qlib-paper-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            reports/qlib-paper/*.json
+            reports/qlib-paper/*.csv
+            reports/qlib-paper/*.txt
+          if-no-files-found: ignore
+          retention-days: 30
