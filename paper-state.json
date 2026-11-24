@@ -2,8 +2,24 @@
   "version": 1,
   "cash": 100000.0,
   "positions": {},
-  "signal": null,
-  "last_settled": null,
+  "signal": {
+    "asof": "2026-11-24",
+    "codes": [
+      "SZ002837",
+      "SZ002916",
+      "SZ002938",
+      "SH600176",
+      "SZ002074",
+      "SH600522",
+      "SH600489",
+      "SH600362",
+      "SZ000988",
+      "SZ000977"
+    ],
+    "train_end": "2026-05-19",
+    "validation_end": "2026-11-19"
+  },
+  "last_settled": "2026-11-24",
   "events": [],
   "notifications": []
 }
