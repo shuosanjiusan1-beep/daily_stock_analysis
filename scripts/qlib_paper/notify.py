@@ -19,6 +19,7 @@ def context(day, weekend=False):
     model = os.environ.get('GEMINI_MODEL', '')
     if not key:
         return '新闻检索未配置；模型信号不依赖新闻摘要。'
+    links = ''
     try:
         query = (f'{day} A股 周末 周六 周日 下周开市 风险 新闻' if weekend
                  else f'{day} A股 市场 风险 新闻')
@@ -48,7 +49,8 @@ def context(day, weekend=False):
         return 'AI新闻摘要（不参与模拟交易）：\n' + summary + '\n' + links
     except Exception as exc:
         print(f'Optional news context unavailable ({type(exc).__name__})')
-        return '新闻或AI摘要暂不可用；未影响确定性模拟账本。'
+        return ('AI新闻整理暂不可用；以下保留检索来源，内容需自行核对：\n' + links
+                if links else '新闻检索暂不可用；本报告不据此编造市场消息。')
 
 
 def send(subject, body):
@@ -64,6 +66,8 @@ def send(subject, body):
     message['From'] = sender
     message['To'] = ', '.join(receivers)
     message.set_content(body)
+    from research import html_report
+    message.add_alternative(html_report(body), subtype='html')
     with smtplib.SMTP('smtp.gmail.com', 587, timeout=30) as connection:
         connection.starttls(context=ssl.create_default_context())
         connection.login(sender, password)

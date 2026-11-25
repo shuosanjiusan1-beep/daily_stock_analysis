@@ -14,8 +14,9 @@ from model import benchmark, rolling_signal
 from notify import context, send
 from paper import bars, settle, validate
 import state as storage
+from research import build as build_research, render as render_research, html_report
 
-LABELS = {'daily': '每日收盘总结', 'weekly': '周度回顾', 'weekend': '周末/下周开市前预览',
+LABELS = {'daily': '每日选股研究', 'weekly': '周度回顾', 'weekend': '周末/下周开市前预览',
           'pre': '盘前', 'intra': '盘中', 'post': '盘后'}
 
 
@@ -72,7 +73,7 @@ def daily(phase, output, provider=None):
         return
     state, sha = storage.load()
     validate(state)
-    key = f'{now.date()}:{phase}'
+    key = f'{now.date()}:{phase}:research-v2'
     if key in state['notifications']:
         print('Notification already completed')
         return
@@ -84,25 +85,36 @@ def daily(phase, output, provider=None):
         body = render(state, phase, expected, '数据未齐或校验未通过：暂停生成新信号和模拟结算。次日盘前重试。')
     else:
         (output / 'freshness.json').write_text(json.dumps(freshness, indent=2))
+        previous = state.get('research_signal')
+        research_signal = previous if previous and previous.get('asof') == expected and previous.get('ranked') else None
+        if research_signal is None:
+            try:
+                research_signal = rolling_signal(provider, expected)
+                (output / 'research_signal.json').write_text(json.dumps(research_signal, ensure_ascii=False, allow_nan=False))
+            except Exception as exc:
+                print(f'Research model unavailable ({type(exc).__name__})')
+        if research_signal:
+            state['research_signal'] = research_signal
+        research = build_research(provider, expected, research_signal, previous if previous and previous.get('asof') != expected else None)
+        (output / 'research.json').write_text(json.dumps(research, ensure_ascii=False, allow_nan=False))
         if phase in ('daily', 'weekly', 'weekend', 'pre', 'post') and state['last_settled'] != expected:
             codes = set(state['positions']) | set((state['signal'] or {}).get('codes', [])[:5])
             market = bars(provider, codes, expected) if codes else {}
-            next_day = calendar.next_session(expected).date().isoformat()
             signal = state.get('signal') or {}
             signal_open = (calendar.next_session(signal['asof']).date().isoformat()
                            if signal.get('cadence') == 'weekly' else None)
-            if signal_open and signal_open < expected and state.get('last_settled') < signal_open:
+            if signal_open and signal_open < expected and (state.get('last_settled') or '') < signal_open:
                 raise ValueError('Missed weekly paper rebalance; reconciliation required')
             rebalance = bool(signal_open and signal_open == expected)
             updated = settle(state, expected, market,
                              lambda d: calendar.next_session(d).date().isoformat(), rebalance=rebalance)
-            if (phase in ('daily', 'weekly', 'weekend', 'pre', 'post') and
-                    datetime.fromisoformat(next_day).date().isocalendar()[:2] !=
-                    datetime.fromisoformat(expected).date().isocalendar()[:2]):
-                updated['signal'] = rolling_signal(provider, expected)
-                updated['signal']['cadence'] = 'weekly'
             sha = storage.save(updated, sha)
             state = updated
+        next_day = calendar.next_session(expected).date().isoformat()
+        if (research_signal and phase in ('daily', 'weekly', 'weekend', 'pre', 'post') and
+                datetime.fromisoformat(next_day).date().isocalendar()[:2] !=
+                datetime.fromisoformat(expected).date().isocalendar()[:2]):
+            state['signal'] = dict(research_signal, cadence='weekly')
         if phase == 'daily' and now.weekday() == 0:
             status = f'周一开市前概览；最近完整行情截至{expected}。'
         elif phase == 'weekly':
@@ -111,8 +123,11 @@ def daily(phase, output, provider=None):
             status = f'周末预览；最近完整行情截至{expected}，并附周末资讯。'
         else:
             status = '日线时效校验通过。' if state.get('last_settled') == expected else '账本尚未完成本次结算；仅报告状态，不补记成交。'
-        body = render(state, phase, expected, status, context(str(now.date()), weekend=phase == 'weekend'))
+        body = render_research(research, phase, calendar.next_session(expected).date().isoformat())
+        body += '\n\n【新闻背景与来源】\n' + context(str(now.date()), weekend=phase == 'weekend')
+        body += '\n\n【附录：模拟账本与数据状态】\n' + render(state, phase, expected, status)
     (output / 'report.txt').write_text(body)
+    (output / 'report.html').write_text(html_report(body))
     send(f'[模拟] Qlib {LABELS[phase]} {now.date()}', body)
     state['notifications'] = (state['notifications'] + [key])[-120:]
     storage.save(state, sha)
