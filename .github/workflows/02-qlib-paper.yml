@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'validate=数据与官方回测; commission=首次验收并初始化; 其余为邮件时段'
+        description: 'validate=数据与官方回测; commission=首次验收并初始化; daily/weekly/weekend=日报/周报/周末预览'
         type: choice
         default: validate
-        options: [validate, commission, test-mail, pre, intra, post]
+        options: [validate, commission, test-mail, daily, weekly, weekend, pre, intra, post]
   schedule:
-    # Asia/Shanghai: 08:20, 11:10, 19:30. GitHub scheduled runs can be delayed.
+    # Asia/Shanghai: daily recap 08:20; Saturday weekly recap 08:20; Sunday weekend preview 19:30.
     - cron: '20 0 * * 1-5'
-    - cron: '10 3 * * 1-5'
-    - cron: '30 11 * * 1-5'
+    - cron: '20 0 * * 6'
+    - cron: '30 11 * * 0'
 
 permissions:
   contents: read
@@ -49,11 +49,11 @@ jobs:
           if [ -n "$INPUT_MODE" ]; then
             echo "MODE=$INPUT_MODE" >> "$GITHUB_ENV"
           elif [ "$SCHEDULE" = '20 0 * * 1-5' ]; then
-            echo 'MODE=pre' >> "$GITHUB_ENV"
-          elif [ "$SCHEDULE" = '10 3 * * 1-5' ]; then
-            echo 'MODE=intra' >> "$GITHUB_ENV"
+            echo 'MODE=daily' >> "$GITHUB_ENV"
+          elif [ "$SCHEDULE" = '20 0 * * 6' ]; then
+            echo 'MODE=weekly' >> "$GITHUB_ENV"
           else
-            echo 'MODE=post' >> "$GITHUB_ENV"
+            echo 'MODE=weekend' >> "$GITHUB_ENV"
           fi
       - name: Verify data and official LightGBM baseline
         if: env.MODE == 'validate' || env.MODE == 'commission'
@@ -75,7 +75,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/qlib_paper/run.py initialize
       - name: Produce paper report
-        if: env.MODE == 'pre' || env.MODE == 'intra' || env.MODE == 'post'
+        if: env.MODE == 'daily' || env.MODE == 'weekly' || env.MODE == 'weekend' || env.MODE == 'pre' || env.MODE == 'intra' || env.MODE == 'post'
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}

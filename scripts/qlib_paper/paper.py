@@ -39,12 +39,16 @@ def bars(provider, codes, day):
     return result
 
 
-def settle(state, day, market, next_session):
+def settle(state, day, market, next_session, rebalance=True):
     state = deepcopy(validate(state))
     if state['last_settled'] == day:
         return state
     signal = state['signal']
-    if signal is None:
+    if signal is None or not rebalance:
+        for code, pos in state['positions'].items():
+            if code not in market or abs(market[code]['factor'] / pos['factor'] - 1) > 1e-5:
+                raise PaperBlocked('Corporate action or missing valuation; reconciliation required')
+            pos['mark'] = market[code]['close']
         state['last_settled'] = day
         return state
     if next_session(signal['asof']) != day:
