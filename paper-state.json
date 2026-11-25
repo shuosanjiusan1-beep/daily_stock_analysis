@@ -22,6 +22,7 @@
   "last_settled": "2026-11-24",
   "events": [],
   "notifications": [
-    "2026-11-25:pre"
+    "2026-11-25:pre",
+    "2026-11-25:daily"
   ]
 }
