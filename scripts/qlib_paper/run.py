@@ -84,7 +84,7 @@ def daily(phase, output, provider=None):
         body = render(state, phase, expected, '数据未齐或校验未通过：暂停生成新信号和模拟结算。次日盘前重试。')
     else:
         (output / 'freshness.json').write_text(json.dumps(freshness, indent=2))
-        if phase in ('daily', 'pre', 'post') and state['last_settled'] != expected:
+        if phase in ('daily', 'weekly', 'weekend', 'pre', 'post') and state['last_settled'] != expected:
             codes = set(state['positions']) | set((state['signal'] or {}).get('codes', [])[:5])
             market = bars(provider, codes, expected) if codes else {}
             next_day = calendar.next_session(expected).date().isoformat()
@@ -96,7 +96,7 @@ def daily(phase, output, provider=None):
             rebalance = bool(signal_open and signal_open == expected)
             updated = settle(state, expected, market,
                              lambda d: calendar.next_session(d).date().isoformat(), rebalance=rebalance)
-            if (phase in ('daily', 'pre', 'post') and
+            if (phase in ('daily', 'weekly', 'weekend', 'pre', 'post') and
                     datetime.fromisoformat(next_day).date().isocalendar()[:2] !=
                     datetime.fromisoformat(expected).date().isocalendar()[:2]):
                 updated['signal'] = rolling_signal(provider, expected)
