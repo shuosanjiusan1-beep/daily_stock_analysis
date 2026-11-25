@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 独立Qlib邮件以每日5日目标模型研究、市场广度、强弱候选及条件式观察计划为主体，模拟账本移至附录；补充HTML邮件、模型失败提示及新闻摘要超时后的来源保留。
+
 - [新功能] 增加独立 Qlib A股模拟工作流：官方 LightGBM 验证、日线时效门禁、三时段邮件和独立模拟账本；默认关闭定时运行，不连接券商、不改动已有工作流。
 
 - [改进] CI 瘦身：PR 仅改文档或 `tests/fixtures/**` 时以 `docs-contract-tests` 替代三分片后端全量测试；`docker-build` 保留运行时输入触发并排除前端测试与 Markdown 改动；前端仅改单元测试文件时 `web-gate` 跳过构建与 Playwright（非 PR 事件触发 `web-gate` 时仍执行完整构建与 Playwright，`docker-build` 与文档契约后端全量在非 PR 事件下保持兜底）。

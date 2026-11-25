@@ -87,5 +87,56 @@ class PaperSafetyTests(unittest.TestCase):
             self.assertTrue(math.isnan(value_at(directory, 'SH600000', 'close', 1)))
 
 
+class ResearchReportTests(unittest.TestCase):
+    def test_history_excludes_future_bars_and_rejects_missing(self):
+        from research import history
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'features/sh600000'
+            p.mkdir(parents=True)
+            (p / 'close.day.bin').write_bytes(struct.pack('<fffff', 0, 10, 11, 12, 999))
+            self.assertEqual(history(directory, 'SH600000', 'close', 2, 3), [10, 11, 12])
+            with self.assertRaises(ValueError):
+                history(directory, 'SH600000', 'close', 2, 4)
+
+    def test_adjusted_metrics_use_latest_factor(self):
+        from research import metrics
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'features/sh600000'
+            p.mkdir(parents=True)
+            for field in ('close', 'high', 'low', 'volume', 'factor'):
+                values = [2.] * 61 if field == 'factor' else list(range(100, 161))
+                (p / f'{field}.day.bin').write_bytes(struct.pack('<' + 'f' * 62, 0, *values))
+            row = metrics(directory, 'SH600000', 60)
+            self.assertEqual(row['close'], 80.)
+            self.assertAlmostEqual(row['day'], 160 / 159 - 1)
+            self.assertEqual(row['resistance'], 159 / 2)
+
+    def test_failed_model_does_not_fabricate_candidates(self):
+        from research import render
+        report = {'asof': '2026-11-24', 'benchmark': {'close': 4000, 'day': .01, 'week': .02,
+                  'month': .03, 'ma20': 3900}, 'up': 200, 'down': 100, 'coverage': 300,
+                  'universe': 300, 'above_ma20': 180, 'signal': None, 'strong': [], 'weak': []}
+        body = render(report, 'daily', '2026-11-25')
+        self.assertIn('不生成候选或买入价位', body)
+        self.assertIn('市场发生了什么', body)
+        self.assertNotIn('当前行动', body)
+
+    def test_news_summary_timeout_preserves_sources(self):
+        from unittest.mock import patch
+        from notify import context
+        result = {'results': [{'title': 'Verified source', 'url': 'https://example.com/news'}]}
+        with patch.dict('os.environ', {'TAVILY_API_KEYS': 'test', 'GEMINI_API_KEY': 'test', 'GEMINI_MODEL': 'test'}):
+            with patch('notify.post', side_effect=[result, TimeoutError()]):
+                body = context('2026-11-24')
+        self.assertIn('https://example.com/news', body)
+        self.assertIn('暂不可用', body)
+
+    def test_html_escapes_external_content(self):
+        from research import html_report
+        body = html_report('<script>bad()</script>\n新闻')
+        self.assertNotIn('<script>', body)
+        self.assertIn('&lt;script&gt;', body)
+
+
 if __name__ == '__main__':
     unittest.main()

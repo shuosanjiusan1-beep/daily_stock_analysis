@@ -56,8 +56,10 @@ def benchmark(provider, output):
     return result
 
 
-def rolling_signal(provider, asof):
-    """Three-year train, six-month validation, two-session label embargo."""
+def rolling_signal(provider, asof, horizon=5):
+    """Rolling research with a forward-return horizon and purged labels."""
+    if not isinstance(horizon, int) or not 1 <= horizon <= 20:
+        raise ValueError('Invalid research horizon')
     initialize(provider)
     dates = (Path(provider) / 'calendars/day.txt').read_text().splitlines()
     index = dates.index(asof)
@@ -65,9 +67,10 @@ def rolling_signal(provider, asof):
         raise ValueError('Insufficient training history')
     config = configuration()
     handler = config['task']['dataset']['kwargs']['handler']['kwargs']
-    train_end = dates[index - 128]
-    valid_start, valid_end = dates[index - 125], dates[index - 3]
+    train_end = dates[index - 125 - horizon - 2]
+    valid_start, valid_end = dates[index - 125], dates[index - horizon - 2]
     train_start = dates[index - 884]
+    handler['label'] = [f'Ref($close, -{horizon + 1})/Ref($close, -1) - 1']
     handler.update(start_time=dates[index - 944] if index >= 944 else dates[0], end_time=asof,
                    fit_start_time=train_start, fit_end_time=train_end)
     config['task']['dataset']['kwargs']['segments'] = {
@@ -80,4 +83,5 @@ def rolling_signal(provider, asof):
     candidates = [str(code) for code in scores.index if str(code).startswith(('SH600', 'SH601', 'SH603', 'SH605', 'SZ000', 'SZ001', 'SZ002', 'SZ003'))]
     if len(candidates) < 10:
         raise ValueError('Insufficient prediction coverage')
-    return {'asof': asof, 'codes': candidates[:10], 'train_end': train_end, 'validation_end': valid_end}
+    return {'asof': asof, 'codes': candidates[:10], 'train_end': train_end, 'validation_end': valid_end, 'horizon': horizon,
+            'ranked': [{'code': code, 'score': float(scores.loc[code])} for code in candidates]}
